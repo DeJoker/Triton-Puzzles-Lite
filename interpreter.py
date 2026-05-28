@@ -8,7 +8,7 @@ import numpy as np
 from triton.runtime.interpreter import (
     GridExecutor,
     _implicit_cvt,
-    RESERVED_KWS,
+    # RESERVED_KWS,
     interpreter_builder,
     InterpretedFunction,
 )
@@ -236,8 +236,8 @@ def _check_storage_contiguous(tensor):
 
 
 def _grid_executor_call(self, *args_dev, **kwargs):
-    # Removes reserved keywords from kwargs
-    kwargs = {k: v for k, v in kwargs.items() if k not in RESERVED_KWS}
+    argspec = inspect.getfullargspec(self.fn)
+    kwargs = {k: v for k, v in kwargs.items() if k in argspec.args}
     if kwargs.pop("warmup", False):
         return
     args_hst, kwargs_hst = self._init_args_hst(args_dev, kwargs)
@@ -370,10 +370,10 @@ def _create_masked_store(fn):
 
 def _create_make_range(fn):
     @wraps(fn)
-    def wrapper(start, stop):
+    def wrapper(ret_ty, start, stop):
         range_record = MakeRange(start=start, end=stop)
         record_builder.add_record(range_record)
-        return fn(start, stop)
+        return fn(ret_ty, start, stop)
 
     return wrapper
 
@@ -510,6 +510,6 @@ def collect_launch(launch):
             access_offsets[last_grid.idx] = r.original_offsets
             if (r.invalid_access_masks & r.original_masks).any():
                 failures[last_grid.idx] = ~(r.invalid_access_masks & r.original_masks)
-            
+
     all_grids[last_grid.idx] = program_records
     return all_grids, tensor_table, failures, access_offsets
