@@ -706,11 +706,16 @@ def conv2d_kernel(
 
     for j in tl.range(0, H):
         for l in tl.range(0, W):
-            off_j_oj = j + off_h[None, :, None]
-            off_l_ol = l + off_w[None, None, :]
-            off_x = off_i[:, None, None] * H * W + off_j_oj * W + off_l_ol
+            off_j_oj = j + off_h[None, :, None] # (1, KH, 1)
+            # print(f"off_j_oj.shape = {off_j_oj.shape}")
+            off_l_ol = l + off_w[None, None, :] # (1, 1, KW)
+            # print(f"off_l_ol.shape = {off_l_ol.shape}")
+            off_x = off_i[:, None, None] * H * W + off_j_oj * W + off_l_ol # (B0, KH, KW)
+            # print(f"off_x.shape = {off_x.shape}")
             mask_x = (off_j_oj < H) & (off_l_ol < W)
             x = tl.load(x_ptr + off_x, mask=mask_x)
+
+
             # [B0, KH, KW]
             z = x * k[None, :]
             z = tl.sum(tl.sum(z, 2), 1)
@@ -750,18 +755,21 @@ def dot_kernel(
     x_ptr,
     y_ptr,
     z_ptr,
-    N0,
-    N1,
-    N2,
-    MID,
+    N0, # M
+    N1, # N
+    N2, # Batch
+    MID, # K
     B0: tl.constexpr,
     B1: tl.constexpr,
     B2: tl.constexpr,
     B_MID: tl.constexpr,
 ):
-    block_id_j = tl.program_id(0)
-    block_id_k = tl.program_id(1)
-    block_id_i = tl.program_id(2)
+    # x # shape: (N2, N0, MID)
+    # y # shape: (N2, MID, N1)
+
+    block_id_j = tl.program_id(0)  # N0  M维度  每个 block 负责一段 M 行
+    block_id_k = tl.program_id(1)  # N1  N维度  每个 block 负责一段 N 列
+    block_id_i = tl.program_id(2)  # N2  Batch维度 每个 block 负责一段 Batch
     # Finish me!
     off_i = block_id_i * B2 + tl.arange(0, B2)
     off_j = block_id_j * B0 + tl.arange(0, B0)
@@ -824,9 +832,27 @@ Note:
 - Remember to unpack the `FPINT` values into separate 4-bit values. This contains some shape manipulation.
 """
 
+# Fields Per INTeger
 FPINT = 32 // 4
 GROUP = 8
 
+
+"""
+weight 存储：  [32, 8] int32  ──提取──▶  [32, 8, 8] 4‑bit  ──view──▶ [32, 64]
+scale 存储：   [32, 8] float32 ──expand──▶ [32, 8, 8]       ──view──▶ [32, 64]
+offset 存储：  [32,]  int32    ──提取──▶  [32, 8] 4‑bit    ──expand+view──▶ [32, 64]
+activation：   [64, 32] float32
+
+
+
+
+x = torch.randint(0, 2**31, (32,8))
+a = extract(x)
+a[0]
+"""
+
+# weight @ activation -> z
+# 32*64 @ 64*32    ---->    torch.Size([32, 32])
 
 def quant_dot_spec(
     scale: Float32[32, 8],
@@ -855,9 +881,9 @@ def quant_dot_kernel(
     weight_ptr,
     activation_ptr,
     z_ptr,
-    N0,
-    N1,
-    MID,
+    N0, # M
+    N1, # N
+    MID, # K
     B0: tl.constexpr,
     B1: tl.constexpr,
     B_MID: tl.constexpr,
@@ -897,7 +923,7 @@ def quant_dot_kernel(
         # note: our weight will be stored in 4bits.
         off_weight_l = l // FPINT + tl.arange(0, B_MID // FPINT)
         mask_weight_l = off_weight_l < (MID // FPINT)
-        off_weight = off_j[:, None] * (MID // FPINT) + off_weight_l[None, :]
+        off_weight = off_j[:, None] * (MID // FPINT) + off_weight_l[None, :] # (B0, B_MID//FPINT)
         mask_weight = mask_j[:, None] & mask_weight_l[None, :]
         weight = tl.load(weight_ptr + off_weight, mask=mask_weight)
         # print(weight.shape)
