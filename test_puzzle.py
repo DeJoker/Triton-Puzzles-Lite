@@ -36,11 +36,12 @@ def test(puzzle, puzzle_spec, nelem={}, B={"B0": 32}, print_log=False, device="c
 
     #for k, v in args.items():
     #    print(k, v)
-    
+
     # triton_viz.trace(puzzle)[grid](*tt_args, **B, **nelem))
+    print(f"grid: {grid(B)}")
     with patch():
         puzzle[grid](*tt_args, **B, **nelem)
-    
+
     z = tt_args[-1]
     tt_args = tt_args[:-1]
     z_ = puzzle_spec(*tt_args)
@@ -66,7 +67,7 @@ def test(puzzle, puzzle_spec, nelem={}, B={"B0": 32}, print_log=False, device="c
         print(mem_emoji, "Invalid access detected! ")
     else:
         print(mem_emoji, "No invalid access detected.")
-    
+
     if failures or print_log:
         print("Launch args: ", nelem, B)
         print("Inputs: ", tt_args)
@@ -77,5 +78,5 @@ def test(puzzle, puzzle_spec, nelem={}, B={"B0": 32}, print_log=False, device="c
             print("Access offsets (in bytes. float32/int32=4 bytes per loc): \n", value)
             if is_invalid:
                 print("Invalid access mask (True: valid access, False: invalid access): \n", failures[key])
-    
+
     return match and not failures

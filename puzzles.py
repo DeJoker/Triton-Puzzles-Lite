@@ -216,6 +216,9 @@ def add_kernel(x_ptr, z_ptr, N0, B0: tl.constexpr):
     off_x = tl.arange(0, B0)
     x = tl.load(x_ptr + off_x)
     # Finish me!
+    x = x + 10
+
+    tl.store(z_ptr + off_x, x, mask=off_x < N0)
     return
 
 
@@ -260,12 +263,43 @@ Block size `B1` is always the same as vector `y` length `N1`.
 """
 
 
+"""
+x = torch.arange(0,3)
+y = torch.arange(0,4)
+
+>>> x[None, :]
+tensor([[0, 1, 2]])
+>>> y[:, None]
+tensor([[0],
+        [1],
+        [2],
+        [3]])
+
+>>> x[None, :] + y[:, None]
+tensor([[0, 1, 2],
+        [1, 2, 3],
+        [2, 3, 4],
+        [3, 4, 5]])
+
+"""
+
 def add_vec_spec(x: Float32[32,], y: Float32[32,]) -> Float32[32, 32]:
     return x[None, :] + y[:, None]
 
 
 @triton.jit
 def add_vec_kernel(x_ptr, y_ptr, z_ptr, N0, N1, B0: tl.constexpr, B1: tl.constexpr):
+    pid = tl.program_id(0)
+    off_x = tl.arange(0, B0) + pid * B0
+    x = tl.load(x_ptr + off_x, mask=off_x < N0)
+
+    off_y = tl.arange(0, B1) + pid * B1
+    y = tl.load(y_ptr + off_y, mask=off_y < N1)
+
+    z = x[None, :] + y[:, None]
+
+    off_z = off_y[:, None]*B0 + off_x[None, :]
+    tl.store(z_ptr + off_z, z, mask=(off_x[None, :] < N0) & (off_y[:, None] < N1))
     # Finish me!
     return
 
@@ -472,7 +506,7 @@ def flashatt_kernel(
 ):
     block_id_i = tl.program_id(0)
     log2_e = 1.44269504
-    myexp = lambda x: tl.exp2(log2_e * x)
+    # myexp = lambda x: tl.exp2(log2_e * x)
     # Finish me!
     return
 
